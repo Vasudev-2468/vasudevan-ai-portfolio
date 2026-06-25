@@ -1,0 +1,36 @@
+# ── Dependencies / build artifacts ──────────────────────────────────────
+node_modules
+dist
+.build
+frontend/.next
+frontend/node_modules
+backend/.venv
+backend/__pycache__
+backend/app/__pycache__
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+
+# ── Secrets / local config ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
+
+# ── Editor / OS ─────────────────────────────────────────────────────────
+.DS_Store
+.vscode
+.idea
+*.log
+
+# ── PII / sensitive original source documents ───────────────────────────
+# (Public-served mirrors of the résumé and photo live under frontend/public/
+#  and are tracked; the originals at the repo root are ignored.)
+College_files/
+Company_files/
+Images/
+/Resume_updated.pdf
+Journal_Papers_published/*.docx

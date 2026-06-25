@@ -1,0 +1,90 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "4000:4000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=/api
+      - BACKEND_URL=http://backend:4100
+      - PORT=4000
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/next.config.ts:/app/next.config.ts
+      - ./frontend/tailwind.config.ts:/app/tailwind.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/postcss.config.mjs:/app/postcss.config.mjs
+    depends_on:
+      - backend
+    networks:
+      - vasudevan-net
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "4100:4100"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://vasudevan:vasudevan@postgres:5432/vasudevan
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION=vasudevan-knowledge
+      - UPLOAD_DIR=/app/uploads
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me-in-env}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-claude-haiku-4-5-20251001}
+      - LLM_AGENT_MODEL=${LLM_AGENT_MODEL:-claude-sonnet-4-6}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - NOTIFY_EMAIL_TO=${NOTIFY_EMAIL_TO:-}
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
+    volumes:
+      - ./backend/app:/app/app
+      - backend_uploads:/app/uploads
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    networks:
+      - vasudevan-net
+
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: vasudevan
+      POSTGRES_PASSWORD: vasudevan
+      POSTGRES_DB: vasudevan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - vasudevan-net
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - vasudevan-net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: always
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - vasudevan-net
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  backend_uploads:
+
+networks:
+  vasudevan-net:
+    driver: bridge
