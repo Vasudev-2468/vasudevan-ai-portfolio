@@ -17,6 +17,9 @@ class Profile(Base):
     phone: Mapped[str] = mapped_column(String(40))
     location: Mapped[str] = mapped_column(String(120))
     links: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Public URL served from `/media/profile/<file>` after upload; None
+    # falls back to the frontend's static avatar.
+    photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class Experience(Base):
@@ -29,6 +32,9 @@ class Experience(Base):
     end_date: Mapped[str] = mapped_column(String(40))
     description: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Education(Base):
@@ -39,6 +45,9 @@ class Education(Base):
     location: Mapped[str] = mapped_column(String(120))
     year: Mapped[str] = mapped_column(String(40))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Skill(Base):
@@ -47,6 +56,9 @@ class Skill(Base):
     name: Mapped[str] = mapped_column(String(120))
     category: Mapped[str] = mapped_column(String(60))
     proficiency: Mapped[int] = mapped_column(Integer, default=80)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Project(Base):
@@ -60,6 +72,9 @@ class Project(Base):
     tech_stack: Mapped[list] = mapped_column(JSON, default=list)
     repo_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     demo_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Publication(Base):
@@ -72,6 +87,9 @@ class Publication(Base):
     kind: Mapped[str] = mapped_column(String(40))  # journal | conference | patent
     doi: Mapped[str | None] = mapped_column(String(255), nullable=True)
     url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Certification(Base):
@@ -80,6 +98,9 @@ class Certification(Base):
     name: Mapped[str] = mapped_column(String(200))
     issuer: Mapped[str] = mapped_column(String(200))
     year: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class AssistantMessage(Base):
@@ -208,6 +229,43 @@ class CustomField(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AdminUser(Base):
+    """The single admin account. Only one row is ever created —
+    creation self-locks once populated (see routers/admin_auth.py).
+    """
+    __tablename__ = "admin_user"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    # TOTP: `totp_pending_secret` is what /2fa/setup produces; only becomes
+    # `totp_secret` after /2fa/enable verifies a live code.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # List of {hash: str, used_at: iso-str | None}. Consumed one-shot.
+    backup_codes: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AdminSession(Base):
+    """Server-side session record. Cookie holds only the opaque id string.
+    Revoke by setting `revoked_at`; expiry is sliding via `last_seen`.
+    """
+    __tablename__ = "admin_session"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # uuid4 hex
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class AuditLog(Base):

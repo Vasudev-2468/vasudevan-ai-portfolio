@@ -13,7 +13,14 @@ async def list_publications(
     kind: str | None = Query(default=None, pattern="^(journal|conference|patent)$"),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(models.Publication).order_by(models.Publication.year.desc())
+    stmt = (
+        select(models.Publication)
+        .where(
+            models.Publication.is_public.is_(True),
+            models.Publication.deleted_at.is_(None),
+        )
+        .order_by(models.Publication.year.desc())
+    )
     if kind:
         stmt = stmt.where(models.Publication.kind == kind)
     result = await session.execute(stmt)

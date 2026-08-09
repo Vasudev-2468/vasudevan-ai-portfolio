@@ -48,6 +48,12 @@ export default function NavBar() {
           <a href="/explore" className="transition hover:text-accent">
             3d
           </a>
+          <a
+            href="/admin"
+            className="ml-1 rounded-full border border-accent/50 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-accent transition hover:bg-accent/10"
+          >
+            admin
+          </a>
         </div>
       </div>
     </header>

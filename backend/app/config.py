@@ -1,3 +1,4 @@
+import secrets
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,8 +25,15 @@ class Settings(BaseSettings):
     embed_model: str = "BAAI/bge-small-en-v1.5"  # fastembed default, 384-dim
     embed_dim: int = 384
 
-    # admin
-    admin_token: str = "change-me-in-env"
+    # admin auth
+    session_cookie_name: str = "admin_session"
+    session_ttl_days: int = 30
+    # HMAC secret used to sign 2FA challenge tokens. Read from env if set,
+    # otherwise auto-generated at import time — regenerating on restart just
+    # invalidates in-flight 5-minute 2FA challenges, which is acceptable.
+    secret_key: str = secrets.token_urlsafe(48)
+    # Set to true in production to send Secure cookies (HTTPS only).
+    cookie_secure: bool = False
 
     # contact-form notifications (all optional — set whatever you want)
     smtp_host: str | None = None

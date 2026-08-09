@@ -17,6 +17,7 @@ class ProfileOut(ORMBase):
     phone: str
     location: str
     links: dict
+    photo_url: str | None = None
 
 
 class ExperienceOut(ORMBase):

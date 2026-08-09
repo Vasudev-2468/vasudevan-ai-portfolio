@@ -14,9 +14,22 @@ from dataclasses import dataclass
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http.models import (
     Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchValue,
     PointStruct,
     VectorParams,
 )
+
+# Namespace for stable point IDs — uuid5(NS, f"{kind}:{id}:{chunk_idx}") makes
+# reindex-in-place possible: same chunk key → same UUID → upsert replaces
+# instead of appending duplicates.
+_POINT_NS = uuid.UUID("d3a4c5b6-1234-4abc-8def-0123456789ab")
+
+
+def entity_point_id(kind: str, entity_id: int, chunk_idx: int = 0) -> str:
+    return str(uuid.uuid5(_POINT_NS, f"{kind}:{entity_id}:{chunk_idx}"))
 
 from app.config import get_settings
 
@@ -111,6 +124,71 @@ class VectorStore:
             return res.count
         except Exception:
             return 0
+
+    async def clear(self) -> None:
+        """Drop and recreate the collection so reindex runs are idempotent."""
+        try:
+            await self.client.delete_collection(collection_name=self.collection)
+        except Exception:
+            pass
+        await self.client.create_collection(
+            collection_name=self.collection,
+            vectors_config=VectorParams(size=self.dim, distance=Distance.COSINE),
+        )
+
+    async def delete_entity(self, kind: str, entity_id: int) -> None:
+        """Remove all points for a given (kind, id) entity."""
+        await self.ensure_collection()
+        try:
+            await self.client.delete(
+                collection_name=self.collection,
+                points_selector=FilterSelector(
+                    filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="metadata.kind",
+                                match=MatchValue(value=kind),
+                            ),
+                            FieldCondition(
+                                key="metadata.id",
+                                match=MatchValue(value=entity_id),
+                            ),
+                        ]
+                    )
+                ),
+            )
+        except Exception:
+            # Missing collection or no matching points → treat as a no-op.
+            pass
+
+    async def upsert_entity(
+        self, kind: str, entity_id: int, chunks: list[dict]
+    ) -> int:
+        """Replace all points for (kind, id) with the given chunks.
+
+        Uses deterministic point IDs so a subsequent upsert overwrites the
+        same slots instead of appending duplicates. Empty `chunks` clears
+        the entity's vectors (used on delete).
+        """
+        await self.delete_entity(kind, entity_id)
+        if not chunks:
+            return 0
+        await self.ensure_collection()
+        vectors = await self._embed([c["text"] for c in chunks])
+        points = [
+            PointStruct(
+                id=entity_point_id(kind, entity_id, i),
+                vector=v,
+                payload={
+                    "text": c["text"],
+                    "source": c["source"],
+                    "metadata": {**c.get("metadata", {}), "kind": kind, "id": entity_id},
+                },
+            )
+            for i, (c, v) in enumerate(zip(chunks, vectors))
+        ]
+        await self.client.upsert(collection_name=self.collection, points=points)
+        return len(points)
 
 
 _singleton: VectorStore | None = None

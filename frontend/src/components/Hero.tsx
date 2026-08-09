@@ -20,6 +20,15 @@ function isLikelyUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim());
 }
 
+const API_ORIGIN =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, "") ?? "";
+
+function resolvePhoto(url: string | null | undefined): string {
+  if (!url) return "/images/avatar.png";
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${API_ORIGIN}${url}`;
+}
+
 export default function Hero({
   profile,
   customFields = [],
@@ -27,7 +36,7 @@ export default function Hero({
   profile: Profile;
   customFields?: PublicField[];
 }) {
-  const [avatarSrc, setAvatarSrc] = useState("/images/avatar.png");
+  const [avatarSrc, setAvatarSrc] = useState(resolvePhoto(profile.photo_url));
 
   return (
     <section

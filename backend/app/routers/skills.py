@@ -10,5 +10,10 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 
 @router.get("", response_model=list[schemas.SkillOut])
 async def list_skills(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(models.Skill))
+    result = await session.execute(
+        select(models.Skill).where(
+            models.Skill.is_public.is_(True),
+            models.Skill.deleted_at.is_(None),
+        )
+    )
     return result.scalars().all()

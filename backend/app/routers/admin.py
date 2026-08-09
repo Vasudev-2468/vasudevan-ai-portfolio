@@ -1,23 +1,28 @@
-"""Admin API: uploads, agent tasks, pending diffs.
+"""Admin API: uploads, agent tasks, pending diffs, analytics, custom fields.
 
-Protected by a shared bearer token (settings.admin_token). Not a substitute
-for real auth — swap for NextAuth + OAuth before exposing publicly.
+Every endpoint on this router requires an authenticated admin session —
+the guard is applied at the router level via `Depends(current_user)`.
+Sign-in / sign-out / 2FA / password-change live on the sibling `admin_auth`
+router.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+
+import csv
+import io
+import json
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
-    Header,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -29,26 +34,22 @@ from app import models
 from app.config import get_settings
 from app.database import SessionLocal, get_session
 from app.services.agents import portfolio_manager
-from app.services.audit import audit, client_ip, user_agent
+from app.services.audit import audit
+from app.services.auth import current_user
 from app.services.ingest import ingest_portfolio
 from app.services.vector import vector_store
 
 
-router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def require_admin(authorization: Annotated[str | None, Header()] = None) -> None:
-    expected = get_settings().admin_token
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    token = authorization.split(" ", 1)[1].strip()
-    if token != expected:
-        raise HTTPException(status_code=403, detail="bad admin token")
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(current_user)],
+)
 
 
 # ── Stats ────────────────────────────────────────────────────────────────
 
-@router.get("/stats", dependencies=[Depends(require_admin)])
+@router.get("/stats")
 async def stats(session: AsyncSession = Depends(get_session)):
     counts = {}
     for label, Model in [
@@ -87,7 +88,6 @@ async def _run_portfolio_manager(task_id: int) -> None:
 @router.post(
     "/uploads",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_admin)],
 )
 async def upload(
     background_tasks: BackgroundTasks,
@@ -129,7 +129,7 @@ async def upload(
     return {"upload_id": record.id, "task_id": task.id, "status": "queued"}
 
 
-@router.get("/uploads", dependencies=[Depends(require_admin)])
+@router.get("/uploads")
 async def list_uploads(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(
         select(models.Upload).order_by(models.Upload.created_at.desc()).limit(50)
@@ -143,7 +143,7 @@ async def list_uploads(session: AsyncSession = Depends(get_session)):
     ]
 
 
-@router.get("/tasks", dependencies=[Depends(require_admin)])
+@router.get("/tasks")
 async def list_tasks(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(
         select(models.AgentTask).order_by(models.AgentTask.created_at.desc()).limit(50)
@@ -160,7 +160,7 @@ async def list_tasks(session: AsyncSession = Depends(get_session)):
 
 # ── Pending diffs ────────────────────────────────────────────────────────
 
-@router.get("/diffs", dependencies=[Depends(require_admin)])
+@router.get("/diffs")
 async def list_diffs(
     status_filter: str | None = None,
     session: AsyncSession = Depends(get_session),
@@ -185,7 +185,7 @@ async def list_diffs(
     ]
 
 
-@router.post("/diffs/{diff_id}/approve", dependencies=[Depends(require_admin)])
+@router.post("/diffs/{diff_id}/approve")
 async def approve(diff_id: int, session: AsyncSession = Depends(get_session)):
     diff = (await session.execute(
         select(models.PendingDiff).where(models.PendingDiff.id == diff_id)
@@ -203,7 +203,7 @@ async def approve(diff_id: int, session: AsyncSession = Depends(get_session)):
     return {"id": diff.id, "status": diff.status}
 
 
-@router.post("/diffs/{diff_id}/reject", dependencies=[Depends(require_admin)])
+@router.post("/diffs/{diff_id}/reject")
 async def reject(diff_id: int, session: AsyncSession = Depends(get_session)):
     diff = (await session.execute(
         select(models.PendingDiff).where(models.PendingDiff.id == diff_id)
@@ -219,7 +219,7 @@ async def reject(diff_id: int, session: AsyncSession = Depends(get_session)):
 # ── Visitor history (contacts, page views, downloads) ──────────────────
 
 
-@router.get("/contacts", dependencies=[Depends(require_admin)])
+@router.get("/contacts")
 async def list_contacts(
     limit: int = 200,
     session: AsyncSession = Depends(get_session),
@@ -245,7 +245,7 @@ async def list_contacts(
     ]
 
 
-@router.post("/contacts/{contact_id}/status", dependencies=[Depends(require_admin)])
+@router.post("/contacts/{contact_id}/status")
 async def set_contact_status(
     contact_id: int,
     payload: dict,
@@ -274,7 +274,7 @@ async def set_contact_status(
     return {"id": row.id, "status": row.status}
 
 
-@router.get("/views", dependencies=[Depends(require_admin)])
+@router.get("/views")
 async def list_views(
     limit: int = 100,
     session: AsyncSession = Depends(get_session),
@@ -298,7 +298,7 @@ async def list_views(
     ]
 
 
-@router.get("/views/stats", dependencies=[Depends(require_admin)])
+@router.get("/views/stats")
 async def view_stats(session: AsyncSession = Depends(get_session)):
     # Per-path counts (top 20)
     by_path = (await session.execute(
@@ -326,7 +326,7 @@ async def view_stats(session: AsyncSession = Depends(get_session)):
     }
 
 
-@router.get("/downloads", dependencies=[Depends(require_admin)])
+@router.get("/downloads")
 async def list_downloads(
     limit: int = 100,
     session: AsyncSession = Depends(get_session),
@@ -353,7 +353,7 @@ async def list_downloads(
 # ── Daily analytics rollup ───────────────────────────────────────────────
 
 
-@router.get("/analytics/daily", dependencies=[Depends(require_admin)])
+@router.get("/analytics/daily")
 async def analytics_daily(
     days: int = 30,
     session: AsyncSession = Depends(get_session),
@@ -404,53 +404,10 @@ async def analytics_daily(
 
 # ── Reindex ──────────────────────────────────────────────────────────────
 
-@router.post("/reindex", dependencies=[Depends(require_admin)])
+@router.post("/reindex")
 async def reindex(session: AsyncSession = Depends(get_session)):
-    n = await ingest_portfolio(session)
+    n = await ingest_portfolio(session, rebuild=True)
     return {"chunks_indexed": n}
-
-
-# ── Login / Logout (audited) ─────────────────────────────────────────────
-
-
-class LoginIn(BaseModel):
-    token: str = Field(min_length=1, max_length=200)
-
-
-@router.post("/login")
-async def admin_login(
-    payload: LoginIn,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    expected = get_settings().admin_token
-    masked = payload.token[:4] + "…" if payload.token else "<empty>"
-    if payload.token != expected:
-        audit(
-            session,
-            "admin.login_fail",
-            actor="anonymous",
-            details={"token_prefix": masked},
-            request=request,
-        )
-        await session.commit()
-        raise HTTPException(status_code=403, detail="bad admin token")
-    audit(
-        session,
-        "admin.login",
-        actor="admin",
-        details={"token_prefix": masked},
-        request=request,
-    )
-    await session.commit()
-    return {"ok": True}
-
-
-@router.post("/logout", dependencies=[Depends(require_admin)])
-async def admin_logout(request: Request, session: AsyncSession = Depends(get_session)):
-    audit(session, "admin.logout", actor="admin", request=request)
-    await session.commit()
-    return {"ok": True}
 
 
 # ── Custom fields (CRUD, audited) ────────────────────────────────────────
@@ -477,7 +434,7 @@ def _serialize_field(r: models.CustomField) -> dict:
     }
 
 
-@router.get("/custom-fields", dependencies=[Depends(require_admin)])
+@router.get("/custom-fields")
 async def list_custom_fields(session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
@@ -487,7 +444,7 @@ async def list_custom_fields(session: AsyncSession = Depends(get_session)):
     return [_serialize_field(r) for r in rows]
 
 
-@router.post("/custom-fields", dependencies=[Depends(require_admin)])
+@router.post("/custom-fields")
 async def create_custom_field(
     payload: CustomFieldIn,
     request: Request,
@@ -521,7 +478,7 @@ async def create_custom_field(
     return _serialize_field(row)
 
 
-@router.put("/custom-fields/{field_id}", dependencies=[Depends(require_admin)])
+@router.put("/custom-fields/{field_id}")
 async def update_custom_field(
     field_id: int,
     payload: CustomFieldIn,
@@ -554,7 +511,7 @@ async def update_custom_field(
     return _serialize_field(row)
 
 
-@router.delete("/custom-fields/{field_id}", dependencies=[Depends(require_admin)])
+@router.delete("/custom-fields/{field_id}")
 async def delete_custom_field(
     field_id: int,
     request: Request,
@@ -584,7 +541,7 @@ async def delete_custom_field(
 # ── Visitors (joined with activity counts + email) ───────────────────────
 
 
-@router.get("/visitors", dependencies=[Depends(require_admin)])
+@router.get("/visitors")
 async def list_visitors(
     limit: int = 100,
     session: AsyncSession = Depends(get_session),
@@ -647,19 +604,122 @@ async def list_visitors(
 # ── Audit log ────────────────────────────────────────────────────────────
 
 
-@router.get("/audit", dependencies=[Depends(require_admin)])
+@router.get("/audit")
 async def list_audit(
-    limit: int = 200,
+    limit: int = 50,
+    offset: int = 0,
     action_prefix: str | None = None,
+    actor: str | None = None,
+    target_table: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(models.AuditLog).order_by(models.AuditLog.created_at.desc())
+    """Paginated audit log with optional filters.
+
+    Returns `{ total, limit, offset, entries }`. `total` reflects the count
+    after filters but before pagination, so the UI can render "showing
+    a-b of N" and next/prev correctly.
+    """
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+
+    filters = []
     if action_prefix:
-        stmt = stmt.where(models.AuditLog.action.startswith(action_prefix))
-    rows = (await session.execute(stmt.limit(min(limit, 1000)))).scalars().all()
-    return [
+        filters.append(models.AuditLog.action.startswith(action_prefix))
+    if actor:
+        filters.append(models.AuditLog.actor == actor)
+    if target_table:
+        filters.append(models.AuditLog.target_table == target_table)
+
+    total_stmt = select(func.count()).select_from(models.AuditLog)
+    for f in filters:
+        total_stmt = total_stmt.where(f)
+    total = (await session.execute(total_stmt)).scalar_one()
+
+    stmt = select(models.AuditLog).order_by(models.AuditLog.created_at.desc())
+    for f in filters:
+        stmt = stmt.where(f)
+    stmt = stmt.offset(offset).limit(limit)
+    rows = (await session.execute(stmt)).scalars().all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "entries": [
+            {
+                "id": r.id,
+                "action": r.action,
+                "actor": r.actor,
+                "target_table": r.target_table,
+                "target_id": r.target_id,
+                "details": r.details,
+                "ip": r.ip,
+                "user_agent": r.user_agent,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ],
+    }
+
+
+# ── Exports ────────────────────────────────────────────────────────────
+#
+# Small helper + three per-entity endpoints. `format=csv` (default) returns
+# a downloadable CSV, `format=json` returns pretty-printed JSON. Both
+# stream everything (no server-side pagination) so an admin can back up
+# the tables in one click. Dicts inside cells are serialized as JSON.
+
+
+def _to_csv(headers: list[str], rows: list[dict]) -> str:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow(
+            {
+                h: (
+                    json.dumps(r[h], default=str)
+                    if isinstance(r.get(h), (dict, list))
+                    else ("" if r.get(h) is None else r[h])
+                )
+                for h in headers
+            }
+        )
+    return buf.getvalue()
+
+
+def _export_response(name: str, headers: list[str], rows: list[dict], fmt: str) -> Response:
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    if fmt == "json":
+        body = json.dumps(rows, default=str, indent=2)
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{name}-{stamp}.json"'
+            },
+        )
+    return Response(
+        content=_to_csv(headers, rows),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}-{stamp}.csv"'},
+    )
+
+
+@router.get("/export/audit")
+async def export_audit(
+    fmt: str = "csv",
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            select(models.AuditLog).order_by(models.AuditLog.created_at.desc())
+        )
+    ).scalars().all()
+    data = [
         {
             "id": r.id,
+            "created_at": r.created_at,
             "action": r.action,
             "actor": r.actor,
             "target_table": r.target_table,
@@ -667,7 +727,74 @@ async def list_audit(
             "details": r.details,
             "ip": r.ip,
             "user_agent": r.user_agent,
-            "created_at": r.created_at,
         }
         for r in rows
     ]
+    return _export_response(
+        "audit",
+        ["id", "created_at", "action", "actor", "target_table", "target_id", "ip", "user_agent", "details"],
+        data,
+        fmt,
+    )
+
+
+@router.get("/export/contacts")
+async def export_contacts(
+    fmt: str = "csv",
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            select(models.ContactMessage).order_by(models.ContactMessage.created_at.desc())
+        )
+    ).scalars().all()
+    data = [
+        {
+            "id": r.id,
+            "created_at": r.created_at,
+            "name": r.name,
+            "email": r.email,
+            "subject": r.subject,
+            "message": r.message,
+            "status": r.status,
+            "ip": r.ip,
+            "user_agent": r.user_agent,
+        }
+        for r in rows
+    ]
+    return _export_response(
+        "contacts",
+        ["id", "created_at", "name", "email", "subject", "status", "message", "ip", "user_agent"],
+        data,
+        fmt,
+    )
+
+
+@router.get("/export/downloads")
+async def export_downloads(
+    fmt: str = "csv",
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            select(models.Download).order_by(models.Download.created_at.desc())
+        )
+    ).scalars().all()
+    data = [
+        {
+            "id": r.id,
+            "created_at": r.created_at,
+            "resource": r.resource,
+            "path": r.path,
+            "session_id": r.session_id,
+            "ip": r.ip,
+            "user_agent": r.user_agent,
+        }
+        for r in rows
+    ]
+    return _export_response(
+        "downloads",
+        ["id", "created_at", "resource", "path", "session_id", "ip", "user_agent"],
+        data,
+        fmt,
+    )

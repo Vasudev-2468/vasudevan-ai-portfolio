@@ -8,6 +8,7 @@ export type Profile = {
   phone: string;
   location: string;
   links: Record<string, string>;
+  photo_url?: string | null;
 };
 
 export type Experience = {

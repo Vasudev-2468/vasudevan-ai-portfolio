@@ -20,12 +20,22 @@ async def get_profile(session: AsyncSession = Depends(get_session)):
 @router.get("/education", response_model=list[schemas.EducationOut])
 async def list_education(session: AsyncSession = Depends(get_session)):
     result = await session.execute(
-        select(models.Education).order_by(models.Education.order_index)
+        select(models.Education)
+        .where(
+            models.Education.is_public.is_(True),
+            models.Education.deleted_at.is_(None),
+        )
+        .order_by(models.Education.order_index)
     )
     return result.scalars().all()
 
 
 @router.get("/certifications", response_model=list[schemas.CertificationOut])
 async def list_certifications(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(models.Certification))
+    result = await session.execute(
+        select(models.Certification).where(
+            models.Certification.is_public.is_(True),
+            models.Certification.deleted_at.is_(None),
+        )
+    )
     return result.scalars().all()

@@ -10,5 +10,12 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.get("", response_model=list[schemas.ProjectOut])
 async def list_projects(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(models.Project).order_by(models.Project.id))
+    result = await session.execute(
+        select(models.Project)
+        .where(
+            models.Project.is_public.is_(True),
+            models.Project.deleted_at.is_(None),
+        )
+        .order_by(models.Project.id)
+    )
     return result.scalars().all()
