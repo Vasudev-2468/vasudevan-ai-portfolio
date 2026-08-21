@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ORMBase(BaseModel):
@@ -78,8 +78,12 @@ class CertificationOut(ORMBase):
 
 
 class AssistantQuery(BaseModel):
-    session_id: str = "anonymous"
-    message: str
+    # Bounded — every LLM call is billable, so a public endpoint must
+    # never accept unlimited text. 2000 chars fits any well-formed
+    # question and prevents a single request from ballooning the
+    # provider bill.
+    session_id: str = Field(default="anonymous", max_length=128)
+    message: str = Field(min_length=1, max_length=2000)
 
 
 class AssistantReply(BaseModel):

@@ -110,15 +110,22 @@ export default function News({
     .slice(0, 6);
 
   return (
-    <section id="news" className="section-anchor mx-auto max-w-5xl px-6 pt-8 md:px-10">
-      <h2 className="font-display text-display-md text-ink-50">news</h2>
-      <p className="mt-1 text-sm text-ink-100/55">
+    <section id="news" className="section-anchor relative mx-auto max-w-6xl px-6 py-16 md:px-10">
+      <div className="section-divider mb-12" aria-hidden />
+      <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.32em] text-accent/80">
+        <span className="h-px w-6 bg-accent/50" />
+        <span>06</span>
+        <span>/</span>
+        <span>Signal</span>
+      </div>
+      <h2 className="mt-4 font-display text-display-md text-gradient-accent">news &amp; live feed</h2>
+      <p className="mt-2 text-sm text-ink-100/60">
         Personal milestones on the left, a live feed of AI / ML headlines on the right.{" "}
         <span className="font-mono text-[11px] text-ink-100/45">// refreshes ~4× / day</span>
       </p>
 
-      <div className="mt-6 grid gap-10 md:grid-cols-2">
-        <div>
+      <div className="mt-8 grid gap-10 md:grid-cols-2">
+        <div className="glass rounded-2xl p-6">
           <h3 className="eyebrow">milestones</h3>
           <ol className="mt-3 divide-y divide-ink-100/10 border-t border-ink-100/10">
             {local.map((item, i) => (
@@ -130,7 +137,7 @@ export default function News({
           </ol>
         </div>
 
-        <div>
+        <div className="glass rounded-2xl p-6">
           <h3 className="eyebrow">today in AI</h3>
           <ol className="mt-3 divide-y divide-ink-100/10 border-t border-ink-100/10">
             {aiFeed.length === 0 && (

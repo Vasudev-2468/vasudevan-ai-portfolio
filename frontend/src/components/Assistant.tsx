@@ -57,7 +57,7 @@ export default function Assistant() {
   return (
     <Section
       id="assistant"
-      index="06"
+      index="08"
       eyebrow="AI Assistant"
       title={<>assistant</>}
       intro="Retrieval-grounded answers — every reply cites its source in the portfolio."
@@ -71,7 +71,14 @@ export default function Assistant() {
           <span>session · {sessionId ? sessionId.slice(-6) : "------"}</span>
         </div>
 
-        <div ref={scrollRef} className="max-h-[460px] space-y-3 overflow-y-auto px-5 py-6">
+        <div
+          ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+          aria-label="AI assistant transcript"
+          className="max-h-[460px] space-y-3 overflow-y-auto px-5 py-6"
+        >
           {messages.map((m, i) => (
             <motion.div
               key={i}

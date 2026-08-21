@@ -127,6 +127,23 @@ async def ingest_portfolio(session: AsyncSession, *, rebuild: bool = False) -> i
             "metadata": {"kind": "certification", "id": c.id},
         })
 
+    # Skills — grouped by category into one chunk per category. Individual
+    # skill names are too short to embed usefully, but grouping them by
+    # category ("Computer Vision: OpenCV, YOLO, ViT, EfficientNet, …")
+    # gives the retriever something to match when a visitor asks
+    # "What technologies do you know?" or "your CV skills?".
+    skills_by_cat: dict[str, list[str]] = {}
+    for s in (await session.execute(_public(models.Skill))).scalars():
+        skills_by_cat.setdefault(s.category, []).append(s.name)
+    for category, names in skills_by_cat.items():
+        chunks.append({
+            "text": (
+                f"Skills — {category}: {', '.join(sorted(names))}."
+            ),
+            "source": f"Skills · {category}",
+            "metadata": {"kind": "skills", "category": category},
+        })
+
     return await store.upsert(chunks)
 
 
@@ -232,6 +249,13 @@ async def reindex_entity(
     stored for the entity.
     """
     store = vector_store()
+
+    # Skills are indexed as a *grouped* chunk per category, not per row —
+    # any mutation of a skill row rebuilds the whole category group so
+    # additions, renames, and category moves all propagate correctly.
+    if kind == "skill":
+        return await _reindex_skills(session)
+
     entry = _MODELS.get(kind)
     if not entry:
         return 0
@@ -249,6 +273,40 @@ async def reindex_entity(
         await store.delete_entity(kind, entity_id)
         return 0
     return await store.upsert_entity(kind, entity_id, builder(row))
+
+
+async def _reindex_skills(session: AsyncSession) -> int:
+    """Rebuild the grouped `skills:<category>` vectors from scratch.
+
+    Skills are cheap (typically 20-40 rows total) so re-embedding the
+    whole set on any mutation is fine and keeps the collection strictly
+    consistent — including handling deletes, renames, and re-categorization
+    which per-row upserts could not.
+    """
+    store = vector_store()
+    await store.delete_entity("skills", 0)  # remove the previous grouped entry
+    rows = (
+        await session.execute(
+            select(models.Skill).where(
+                models.Skill.is_public.is_(True),
+                models.Skill.deleted_at.is_(None),
+            )
+        )
+    ).scalars()
+    grouped: dict[str, list[str]] = {}
+    for s in rows:
+        grouped.setdefault(s.category, []).append(s.name)
+    if not grouped:
+        return 0
+    chunks = [
+        {
+            "text": f"Skills — {cat}: {', '.join(sorted(names))}.",
+            "source": f"Skills · {cat}",
+            "metadata": {"kind": "skills", "category": cat},
+        }
+        for cat, names in grouped.items()
+    ]
+    return await store.upsert_entity("skills", 0, chunks)
 
 
 async def unindex_entity(kind: str, entity_id: int) -> None:

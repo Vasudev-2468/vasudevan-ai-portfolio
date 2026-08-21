@@ -127,8 +127,14 @@ async def apply_diff(diff: models.PendingDiff, session: AsyncSession) -> None:
         except Exception:
             payload.pop("year", None)
 
+    touched_id: int | None = None
     if diff.action == "create":
-        session.add(Model(**{k: v for k, v in payload.items() if hasattr(Model, k)}))
+        obj = Model(**{k: v for k, v in payload.items() if hasattr(Model, k)})
+        session.add(obj)
+        # Flush so the auto-generated id is available for the reindex
+        # below — without this, `obj.id` would be None until commit.
+        await session.flush()
+        touched_id = obj.id
     elif diff.action == "update":
         if "id" not in payload:
             raise ValueError("update requires an id")
@@ -140,5 +146,24 @@ async def apply_diff(diff: models.PendingDiff, session: AsyncSession) -> None:
         for k, v in payload.items():
             if k != "id" and hasattr(Model, k):
                 setattr(target, k, v)
+        touched_id = target.id
     diff.status = "approved"
     diff.decided_at = datetime.utcnow()
+
+    # Push the change into the vector index so the assistant sees it on
+    # the very next question. Without this, approved diffs would only
+    # surface after a full reindex.
+    if touched_id is not None:
+        try:
+            from app.services.ingest import reindex_entity
+
+            await reindex_entity(diff.target_table, touched_id, session)
+        except Exception as ex:  # never block a successful diff on RAG
+            import logging
+
+            logging.getLogger("vasudevan").warning(
+                "reindex after apply_diff failed for %s#%s: %s",
+                diff.target_table,
+                touched_id,
+                ex,
+            )

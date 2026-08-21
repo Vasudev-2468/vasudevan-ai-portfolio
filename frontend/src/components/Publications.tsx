@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import Section from "./Section";
+import VisionPipeline from "./3d/VisionPipeline";
 import type { Publication } from "@/lib/api";
 
 const PaperOrbit = dynamic(() => import("./PaperOrbit"), {
@@ -34,20 +35,33 @@ export default function Publications({ items }: { items: Publication[] }) {
       index="03"
       eyebrow="Research"
       title={<>selected publications</>}
-      intro="Peer-reviewed research across deep learning, computer vision, mathematical modelling, and cybersecurity. Filter by type below."
+      intro="Peer-reviewed research across deep learning, computer vision, mathematical modelling, and cybersecurity. Below is a schematic view of my research pipeline; filter the papers by type further down."
     >
-      <div className="glass relative mb-10 overflow-hidden rounded-3xl">
-        <PaperOrbit publications={items} />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-ink-950/60" />
-        <div className="pointer-events-none absolute bottom-4 left-6 right-6 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-widest text-ink-100/55">
-          <span>// drag to orbit · {items.length} publications</span>
-          <span className="flex gap-3">
-            <span className="text-accent">● journal</span>
-            <span className="text-plum">● conference</span>
-            <span className="text-rose">● patent</span>
-          </span>
+      {/* Research pipeline visualisation */}
+      <div className="mb-10">
+        <div className="mb-4 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest text-ink-100/55">
+          <span>research pipeline</span>
+          <span className="h-px flex-1 bg-ink-100/10" />
+          <span>hover any stage</span>
         </div>
+        <VisionPipeline />
       </div>
+
+      {/* Orbit + counts */}
+      {items.length > 0 && (
+        <div className="glass relative mb-10 overflow-hidden rounded-3xl">
+          <PaperOrbit publications={items} />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-ink-950/60" />
+          <div className="pointer-events-none absolute bottom-4 left-6 right-6 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-widest text-ink-100/55">
+            <span>// drag to orbit · {items.length} publications</span>
+            <span className="flex gap-3">
+              <span className="text-accent">● journal</span>
+              <span className="text-plum">● conference</span>
+              <span className="text-rose">● patent</span>
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
@@ -60,6 +74,7 @@ export default function Publications({ items }: { items: Publication[] }) {
                 ? "border-accent bg-accent/15 text-accent"
                 : "border-ink-100/15 text-ink-100/60 hover:border-ink-100/40 hover:text-ink-50"
             }`}
+            data-cursor="hover"
           >
             {f}
           </button>
@@ -74,7 +89,7 @@ export default function Publications({ items }: { items: Publication[] }) {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-40px" }}
             transition={{ duration: 0.35, delay: i * 0.03 }}
-            className="glass group relative overflow-hidden rounded-2xl p-6 transition hover:border-accent/40"
+            className="glass card-lift group relative overflow-hidden rounded-2xl p-6"
           >
             <div className="flex items-start justify-between gap-3">
               <span

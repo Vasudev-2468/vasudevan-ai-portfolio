@@ -2,11 +2,13 @@ services:
   frontend:
     build:
       context: ./frontend
+    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
       - NEXT_PUBLIC_API_BASE_URL=/api
       - BACKEND_URL=http://backend:4100
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://localhost:4000}
       - PORT=4000
     volumes:
       - ./frontend/src:/app/src
@@ -16,25 +18,37 @@ services:
       - ./frontend/tsconfig.json:/app/tsconfig.json
       - ./frontend/postcss.config.mjs:/app/postcss.config.mjs
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - vasudevan-net
 
   backend:
     build:
       context: ./backend
+    restart: unless-stopped
     ports:
       - "4100:4100"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://vasudevan:vasudevan@postgres:5432/vasudevan
+      - DATABASE_URL=postgresql+asyncpg://vasudevan:${POSTGRES_PASSWORD:-vasudevan}@postgres:5432/vasudevan
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=vasudevan-knowledge
       - UPLOAD_DIR=/app/uploads
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me-in-env}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-claude-haiku-4-5-20251001}
       - LLM_AGENT_MODEL=${LLM_AGENT_MODEL:-claude-sonnet-4-6}
+      # AI Avatar — optional providers. All default to unset, at which
+      # point the frontend falls back to browser-photo + speechSynthesis.
+      - AVATAR_PROVIDER=${AVATAR_PROVIDER:-browser-photo}
+      - DID_API_KEY=${DID_API_KEY:-}
+      - HEYGEN_API_KEY=${HEYGEN_API_KEY:-}
+      - SIMLI_API_KEY=${SIMLI_API_KEY:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - TTS_VOICE_ID=${TTS_VOICE_ID:-}
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -46,9 +60,18 @@ services:
       - ./backend/app:/app/app
       - backend_uploads:/app/uploads
     depends_on:
-      - postgres
-      - redis
-      - qdrant
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4100/health', timeout=3).status==200 else 1)\""]
+      interval: 15s
+      timeout: 4s
+      retries: 6
+      start_period: 30s
     networks:
       - vasudevan-net
 
@@ -57,22 +80,36 @@ services:
     restart: always
     environment:
       POSTGRES_USER: vasudevan
-      POSTGRES_PASSWORD: vasudevan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vasudevan}
       POSTGRES_DB: vasudevan
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vasudevan -d vasudevan"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     networks:
       - vasudevan-net
 
   redis:
     image: redis:7-alpine
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     networks:
       - vasudevan-net
 
   qdrant:
     image: qdrant/qdrant:latest
     restart: always
+    # NOTE: 6333 is exposed for local development / admin tooling. In
+    # production, drop the `ports:` block and reach qdrant only via the
+    # internal docker network.
     ports:
       - "6333:6333"
     volumes:

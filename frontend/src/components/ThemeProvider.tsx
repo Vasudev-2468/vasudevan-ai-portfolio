@@ -11,9 +11,9 @@ import {
 } from "react";
 
 export type Theme = "black" | "white" | "rgb";
-export const THEMES: Theme[] = ["white", "black", "rgb"];
+export const THEMES: Theme[] = ["black", "white", "rgb"];
 export const STORAGE_KEY = "vasudevan-theme";
-const DEFAULT_THEME: Theme = "white";
+const DEFAULT_THEME: Theme = "black";
 
 type Ctx = {
   theme: Theme;

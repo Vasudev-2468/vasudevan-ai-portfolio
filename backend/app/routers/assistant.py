@@ -1,17 +1,23 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 from app.database import get_session
 from app.services.assistant import answer
+from app.services.rate_limit import chat_limiter
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 
 @router.post("/chat", response_model=schemas.AssistantReply)
-async def chat(payload: schemas.AssistantQuery, session: AsyncSession = Depends(get_session)):
+async def chat(
+    payload: schemas.AssistantQuery,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    chat_limiter.check(request)
     reply_text, sources, mode = await answer(payload.message, session)
 
     session.add(models.AssistantMessage(

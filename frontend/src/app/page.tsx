@@ -1,9 +1,12 @@
 import About from "@/components/About";
+import AIAvatar from "@/components/avatar/AIAvatar";
 import Assistant from "@/components/Assistant";
 import Contact from "@/components/Contact";
 import Cursor from "@/components/Cursor";
 import ExperienceTimeline from "@/components/ExperienceTimeline";
+import GlobalBackdrop from "@/components/3d/GlobalBackdrop";
 import Hero from "@/components/Hero";
+import IntroLoader from "@/components/IntroLoader";
 import NavBar from "@/components/NavBar";
 import News from "@/components/News";
 import Projects from "@/components/Projects";
@@ -38,13 +41,15 @@ export default async function HomePage() {
 
   return (
     <main id="top" className="relative">
+      <GlobalBackdrop />
+      <IntroLoader />
       <VisitorTracker />
       <ScrollProgress />
       <Cursor />
       <div className="grain" aria-hidden />
       <NavBar />
       <Hero profile={p} customFields={fields} />
-      <News publications={pubs} experience={xp} aiFeed={aiFeed} />
+      <div className="mx-auto max-w-6xl px-6 md:px-10"><div className="section-divider" aria-hidden /></div>
       <About
         profile={p}
         education={education ?? fallback.education}
@@ -54,6 +59,8 @@ export default async function HomePage() {
       <Publications items={pubs} />
       <Projects items={projects ?? fallback.projects} />
       <Skills items={skills ?? fallback.skills} />
+      <News publications={pubs} experience={xp} aiFeed={aiFeed} />
+      <AIAvatar />
       <Assistant />
       <Contact profile={p} />
     </main>

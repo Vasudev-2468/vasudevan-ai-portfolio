@@ -2,14 +2,16 @@
 
 import { useRef, type ReactNode } from "react";
 
-const MAX_TILT = 8; // degrees
+const MAX_TILT = 9; // degrees
 
 export default function TiltCard({
   children,
   className = "",
+  glowClassName = "",
 }: {
   children: ReactNode;
   className?: string;
+  glowClassName?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -42,7 +44,7 @@ export default function TiltCard({
       className={`tilt-card relative ${className}`}
       data-cursor="hover"
     >
-      <div className="tilt-glow pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <div className={`tilt-glow pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${glowClassName}`} />
       {children}
     </div>
   );

@@ -15,6 +15,7 @@ from app.routers import (
     admin_auth,
     admin_content,
     assistant,
+    avatar,
     experience,
     news,
     profile,
@@ -49,7 +50,11 @@ async def _add_column_if_missing(conn, table: str, column: str, coltype: str) ->
                 )
             )
     except Exception as ex:  # never block startup on a schema check
-        log.warning("%s.%s column check skipped: %s", table, column, ex)
+        # Log with exc_info so the traceback lands in the logs — a bare
+        # "skipped: %s" made permission / drift errors invisible.
+        log.warning(
+            "%s.%s column check skipped: %s", table, column, ex, exc_info=True
+        )
 
 
 async def _ensure_columns(conn) -> None:
@@ -73,12 +78,21 @@ async def lifespan(_: FastAPI):
     async with SessionLocal() as session:
         await seed_all(session)
 
-        # Build the vector index on first boot if empty
-        try:
-            existing = await vector_store().count()
-        except Exception as ex:
-            log.warning("vector store unavailable: %s", ex)
-            existing = -1
+        # Build the vector index on first boot if empty. If the vector
+        # store is temporarily unreachable (network blip on cold start),
+        # we no longer silently skip — we retry the count a couple of
+        # times, and if the store is truly down we still let the app
+        # come up so the keyword-fallback path works. When the count is
+        # available and is zero, we always ingest.
+        existing = -1
+        for attempt in range(3):
+            try:
+                existing = await vector_store().count()
+                break
+            except Exception as ex:  # transient qdrant boot race
+                log.warning(
+                    "vector store count attempt %d failed: %s", attempt + 1, ex
+                )
 
         if existing == 0:
             try:
@@ -86,6 +100,12 @@ async def lifespan(_: FastAPI):
                 log.info("indexed %d portfolio chunks", n)
             except Exception as ex:
                 log.warning("portfolio ingest failed: %s", ex)
+        elif existing < 0:
+            log.warning(
+                "vector store unavailable at boot — assistant will use "
+                "keyword fallback until the store recovers and the admin "
+                "hits /admin/reindex"
+            )
 
     yield
 
@@ -111,7 +131,7 @@ async def health() -> dict[str, str | bool]:
 
 
 prefix = settings.api_prefix
-for r in (profile, experience, skills, projects, publications, news, tracking, assistant, admin_auth, admin, admin_content):
+for r in (profile, experience, skills, projects, publications, news, tracking, assistant, avatar, admin_auth, admin, admin_content):
     app.include_router(r.router, prefix=prefix)
 
 # Serve admin-uploaded assets (currently just profile photos) at /media/*.

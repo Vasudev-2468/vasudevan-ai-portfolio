@@ -74,6 +74,23 @@ export type AssistantReply = {
   created_at: string;
 };
 
+export type AvatarChatReply = {
+  session_id: string;
+  reply: string;
+  sources: string[];
+  mode: "llm" | "keyword" | "empty";
+  created_at: string;
+};
+
+export type AvatarSessionConfig = {
+  provider: "browser-photo" | "did" | "heygen" | "simli";
+  photo_url: string | null;
+  session_token: string | null;
+  session_url: string | null;
+  voice_id: string | null;
+  tts_available: boolean;
+};
+
 export type AiNewsItem = {
   source: "arxiv" | "hn" | "devto";
   kind: "paper" | "story" | "article";
@@ -104,11 +121,64 @@ async function safeJson<T>(path: string, init?: RequestInit): Promise<T | null> 
       ...init,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Surface non-2xx to the console at least — silently returning
+      // null used to hide 500s and 404s completely.
+      if (typeof window !== "undefined") {
+        // eslint-disable-next-line no-console
+        console.warn(`[api] ${res.status} ${res.statusText} for ${path}`);
+      }
+      return null;
+    }
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.warn(`[api] network error for ${path}:`, err);
+    }
     return null;
   }
+}
+
+/**
+ * A throwing variant of the fetch helper — use it when the caller needs
+ * to differentiate between "offline / network error" and "backend
+ * returned an error" (for example the AI Avatar, which surfaces a
+ * user-visible error message). Existing pages that only render happy
+ * paths should keep using `safeJson`.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly path: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${base()}${path}`, {
+    cache: "no-store",
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    let detail: string | undefined;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      detail = body?.detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(
+      detail ?? `${res.status} ${res.statusText}`,
+      res.status,
+      path
+    );
+  }
+  return (await res.json()) as T;
 }
 
 export const api = {
@@ -125,6 +195,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId, message }),
     }),
+  avatarChat: (message: string, sessionId: string) =>
+    fetchJson<AvatarChatReply>("/avatar/chat", {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, message }),
+    }),
+  avatarSession: () => fetchJson<AvatarSessionConfig>("/avatar/session"),
   aiNews: () => safeJson<AiNewsFeed>("/news/ai"),
   sendContact: (body: {
     name: string;

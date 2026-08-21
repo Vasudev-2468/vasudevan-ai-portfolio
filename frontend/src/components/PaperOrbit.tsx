@@ -31,8 +31,8 @@ function PaperCard({
   });
 
   const color =
-    publication.kind === "journal" ? "#7df9ff" :
-    publication.kind === "conference" ? "#b18bff" : "#ff6bd6";
+    publication.kind === "journal" ? "#7dd3ff" :
+    publication.kind === "conference" ? "#a894ff" : "#ff9ec7";
 
   return (
     <group ref={groupRef}>
@@ -83,7 +83,7 @@ function CoreSphere() {
   return (
     <mesh ref={ref}>
       <icosahedronGeometry args={[0.85, 1]} />
-      <meshStandardMaterial color="#04050d" emissive="#7df9ff" emissiveIntensity={0.9} wireframe />
+      <meshStandardMaterial color="#04050d" emissive="#7dd3ff" emissiveIntensity={0.9} wireframe />
     </mesh>
   );
 }
@@ -96,9 +96,9 @@ export default function PaperOrbit({ publications }: { publications: Publication
     <div className="h-[460px] w-full">
       <Canvas camera={{ position: [0, 1.5, 7.5], fov: 55 }} dpr={[1, 2]}>
         <ambientLight intensity={0.5} />
-        <pointLight position={[3, 4, 4]} intensity={1.0} color="#7df9ff" />
-        <pointLight position={[-3, -2, -3]} intensity={0.8} color="#b18bff" />
-        <Sparkles count={40} scale={10} size={2} speed={0.4} color="#7df9ff" />
+        <pointLight position={[3, 4, 4]} intensity={1.0} color="#7dd3ff" />
+        <pointLight position={[-3, -2, -3]} intensity={0.8} color="#a894ff" />
+        <Sparkles count={40} scale={10} size={2} speed={0.4} color="#7dd3ff" />
         <CoreSphere />
         {items.map((p, i) => (
           <PaperCard key={p.id} publication={p} index={i} total={items.length} />

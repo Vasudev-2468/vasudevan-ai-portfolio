@@ -27,7 +27,7 @@ const PORTALS: Portal[] = [
   { key: "research", label: "Research", caption: "9 publications · 1 patent", href: "/#research", position: [0, 0.7, -4.5], color: "#ff6bd6" },
   { key: "projects", label: "Projects", caption: "production ML systems", href: "/#projects", position: [2.2, 1.6, -3], color: "#7df9ff" },
   { key: "skills", label: "Skills", caption: "the full stack", href: "/#skills", position: [4.5, 0.7, 0], color: "#b18bff" },
-  { key: "assistant", label: "AI", caption: "talk to the model", href: "/#assistant", position: [2.2, -0.6, 3], color: "#ff6bd6" },
+  { key: "assistant", label: "AI", caption: "talk to the avatar", href: "/#avatar", position: [2.2, -0.6, 3], color: "#ff6bd6" },
   { key: "contact", label: "Contact", caption: "say hello", href: "/#contact", position: [-2.2, -0.6, 3], color: "#7df9ff" },
 ];
 
@@ -60,7 +60,10 @@ function Portal({
           onSelect(portal);
         }}
         onPointerOut={() => {
-          document.body.style.cursor = "none";
+          // Restore whatever cursor value the page had before we entered
+          // this portal. Setting "none" here would leak onto other routes
+          // if the user navigates away mid-hover.
+          document.body.style.cursor = "";
           onSelect(null);
         }}
         onClick={(e) => {
